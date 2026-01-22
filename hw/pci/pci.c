@@ -81,6 +81,7 @@ static const Property pci_props[] = {
     DEFINE_PROP_STRING("romfile", PCIDevice, romfile),
     DEFINE_PROP_UINT32("romsize", PCIDevice, romsize, UINT32_MAX),
     DEFINE_PROP_INT32("rombar",  PCIDevice, rom_bar, -1),
+    DEFINE_PROP_STRING("pci-boot-config", PCIDevice, pci_boot_config),
     DEFINE_PROP_BIT("multifunction", PCIDevice, cap_present,
                     QEMU_PCI_CAP_MULTIFUNCTION_BITNR, false),
     DEFINE_PROP_BIT("x-pcie-lnksta-dllla", PCIDevice, cap_present,
@@ -216,6 +217,92 @@ static void pci_bus_unrealize(BusState *qbus)
     qemu_remove_machine_init_done_notifier(&bus->machine_done);
 
     vmstate_unregister(NULL, &vmstate_pcibus, bus);
+}
+
+/*
+ * Parse pci-boot-config=barN@<addr>[,barM@<addr>]*
+ * On error, sets *@errp
+*/
+static void pci_parse_pci_boot_config(PCIDevice *pci_dev, Error **errp)
+{
+    Error *local_err = NULL;
+    char **entries = NULL, **e;
+    const char *at, *entry;
+    const char *endp;
+    unsigned index;
+    uint64_t bar_addr;
+    int i, ret;
+
+    if (!pci_dev->pci_boot_config || !*pci_dev->pci_boot_config) {
+        return;
+    }
+    if (DEVICE(pci_dev)->hotplugged) {
+        error_setg(&local_err,
+                   "pci-boot-config is not supported on hot-plugged PCI devices");
+        goto out;
+    }
+
+    entries = g_strsplit(pci_dev->pci_boot_config, ",", -1);
+    for (e = entries; e && *e; e++) {
+        entry = g_strstrip(*e);
+        if (*entry == '\0') {
+            error_setg(&local_err,
+                       "pci-boot-config: expected values barN@<addr>[,barM@<addr>]*; "
+                       "empty field in list");
+            goto out;
+        }
+
+        at = strchr(entry, '@');
+        if (!at || sscanf(entry, "bar%u@", &index) != 1) {
+            error_setg(&local_err,
+                       "pci-boot-config: expected values barN@<addr>[,barM@<addr>]*; "
+                       "not '%s'",
+                       entry);
+            goto out;
+        }
+        if (index >= PCI_NUM_REGIONS) {
+            error_setg(&local_err, "pci-boot-config: BAR %u invalid", index);
+            goto out;
+        }
+
+        ret = qemu_strtou64(at + 1, &endp, 0, &bar_addr);
+        if (ret) {
+            error_setg(&local_err,
+                       "pci-boot-config: expected values barN@<addr>[,barM@<addr>]*; "
+                       "unparseable address in '%s'",
+                       entry);
+            goto out;
+        }
+        if (*endp != '\0') {
+            error_setg(&local_err,
+                       "pci-boot-config: expected values barN@<addr>[,barM@<addr>]*; "
+                       "trailing data after address in '%s'",
+                       entry);
+            goto out;
+        }
+
+        if (!pci_dev->fixed_bar_addrs) {
+            pci_dev->fixed_bar_addrs = g_new(pcibus_t, PCI_NUM_REGIONS);
+            for (i = 0; i < PCI_NUM_REGIONS; i++) {
+                pci_dev->fixed_bar_addrs[i] = PCI_BAR_UNMAPPED;
+            }
+        }
+        if (pci_dev->fixed_bar_addrs[index] != PCI_BAR_UNMAPPED) {
+            error_setg(&local_err,
+                       "pci-boot-config: expected values barN@<addr>[,barM@<addr>]*; "
+                       "bar%u specified more than once",
+                       index);
+            goto out;
+        }
+        pci_dev->fixed_bar_addrs[index] = (pcibus_t)bar_addr;
+    }
+
+out:
+    g_strfreev(entries);
+    if (local_err) {
+        g_clear_pointer(&pci_dev->fixed_bar_addrs, g_free);
+        error_propagate(errp, local_err);
+    }
 }
 
 static int pcibus_num(PCIBus *bus)
@@ -1473,6 +1560,8 @@ static void pci_qdev_unrealize(DeviceState *dev)
     pci_del_option_rom(pci_dev);
     pcie_sriov_unregister_device(pci_dev);
 
+    g_clear_pointer(&pci_dev->fixed_bar_addrs, g_free);
+
     if (pc->exit) {
         pc->exit(pci_dev);
     }
@@ -2367,6 +2456,13 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
     if (pci_dev->romfile == NULL && pc->romfile != NULL) {
         pci_dev->romfile = g_strdup(pc->romfile);
         is_default_rom = true;
+    }
+
+    pci_parse_pci_boot_config(pci_dev, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        pci_qdev_unrealize(DEVICE(pci_dev));
+        return;
     }
 
     pci_add_option_rom(pci_dev, is_default_rom, &local_err);

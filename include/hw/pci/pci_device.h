@@ -180,6 +180,16 @@ struct PCIDevice {
     uint32_t acpi_index;
 
     /*
+     * When pci-boot-config is in use, fixed_bar_addrs is non-NULL and has
+     * PCI_NUM_REGIONS elements; each slot is either PCI_BAR_UNMAPPED (no
+     * fixed address for that BAR in pci-boot-config) or the fixed address for
+     * that BAR. NULL if the property is unused/empty or the map is not yet
+     * allocated.
+     */
+    char *pci_boot_config;
+    pcibus_t *fixed_bar_addrs;
+
+    /*
      * Indirect DMA region bounce buffer size as configured for the device. This
      * is a configuration parameter that is reflected into bus_master_as when
      * realizing the device.
