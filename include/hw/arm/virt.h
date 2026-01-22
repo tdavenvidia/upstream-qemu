@@ -186,6 +186,9 @@ struct VirtMachineState {
     MemoryRegion *sysmem;
     MemoryRegion *secure_sysmem;
     bool pci_preserve_config;
+    bool pcie_mmio_window_override;
+    hwaddr override_pcie_mmio_base;
+    hwaddr override_pcie_mmio_size;
 };
 
 #define VIRT_ECAM_ID(high) (high ? VIRT_HIGH_PCIE_ECAM : VIRT_PCIE_ECAM)
