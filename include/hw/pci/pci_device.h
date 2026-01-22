@@ -176,6 +176,11 @@ struct PCIDevice {
     char *failover_pair_id;
     uint32_t acpi_index;
 
+    /* User-provided fixed BAR placement map and parsed state */
+    char *pci_boot_config;
+    pcibus_t fixed_bar_addr[PCI_NUM_REGIONS];
+    bool has_fixed_bar;
+
     /*
      * Indirect DMA region bounce buffer size as configured for the device. This
      * is a configuration parameter that is reflected into bus_master_as when
