@@ -1976,6 +1976,25 @@ static void vfio_bar_prepare(VFIOPCIDevice *vdev, int nr)
 
     /* IO regions are sync, memory can be async */
     bar->region.post_wr = (bar->ioport == 0);
+
+    /* Capture host physical address for fixed-bar use. Skip IO BARs. */
+    if (!bar->ioport) {
+        uint64_t addr = pci_bar & PCI_BASE_ADDRESS_MEM_MASK;
+        if (bar->mem64 && nr + 1 < PCI_ROM_SLOT) {
+            uint32_t hi = 0;
+            int ret2 = vfio_pci_config_space_read(vdev,
+                           PCI_BASE_ADDRESS_0 + 4 * (nr + 1),
+                           sizeof(hi), &hi);
+            if (ret2 == (int)sizeof(hi)) {
+                addr |= (uint64_t)le32_to_cpu(hi) << 32;
+            }
+        }
+        vdev->bar_hpa[nr] = addr; /* 0 means emulated */
+        if (addr) {
+            error_report("vfio-pci %s: BAR%d hpa=0x%"PRIx64" size=0x%"PRIx64,
+                         vdev->vbasedev.name, nr, addr, bar->size);
+        }
+    }
 }
 
 static void vfio_bars_prepare(VFIOPCIDevice *vdev)
