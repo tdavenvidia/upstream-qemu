@@ -210,6 +210,8 @@ struct VirtMachineState {
     MemoryRegion *sysmem;
     MemoryRegion *secure_sysmem;
     bool pci_preserve_config;
+    hwaddr override_pcie_mmio_base;
+    hwaddr override_pcie_mmio_size;
     GPtrArray *smmuv3_devices;
 };
 
