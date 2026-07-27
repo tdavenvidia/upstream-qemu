@@ -187,6 +187,7 @@ struct VFIOPCIDevice {
     bool defer_kvm_irq_routing;
     bool clear_parent_atomics_on_exit;
     bool skip_vsc_check;
+    uint64_t bar_hpa[PCI_NUM_REGIONS - 1]; /* host phys addr; 0 = emulated/IO */
     uint16_t vpasid_cap_offset;
     OnOffAuto ats;
     VFIODisplay *dpy;
