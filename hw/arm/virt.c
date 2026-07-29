@@ -96,6 +96,7 @@
 #include "hw/cxl/cxl_host.h"
 #include "qemu/guest-random.h"
 #include "hw/watchdog/sbsa_gwdt.h"
+#include "hw/pci/pci-fixed-bar.h"
 
 static GlobalProperty arm_virt_compat_defaults[] = {
     { TYPE_VIRTIO_IOMMU_PCI, "aw-bits", "48" },
@@ -2440,6 +2441,18 @@ void virt_machine_done(Notifier *notifier, void *data)
                                        vms->memmap[VIRT_PLATFORM_BUS].size,
                                        vms->irqmap[VIRT_PLATFORM_BUS]);
     }
+    /*
+     * Collect fixed-bar sub-trees and write etc/fixed-bars fw_cfg blob.
+     * Must run before arm_load_dtb().
+     */
+    if (vms->highmem_mmio) {
+        fixed_bars_collect_and_write(
+                vms->bus, vms->fw_cfg,
+                vms->memmap[VIRT_HIGH_PCIE_MMIO].base,
+                vms->memmap[VIRT_HIGH_PCIE_MMIO].size,
+                &error_fatal);
+    }
+
     if (arm_load_dtb(info->dtb_start, info, info->dtb_limit, as, ms, cpu) < 0) {
         exit(1);
     }
